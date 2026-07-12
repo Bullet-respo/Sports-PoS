@@ -2,6 +2,10 @@
 
 A high-performance, dark-themed, serverless desktop Point of Sale (POS) and inventory management workspace engineered from scratch. The application replaces paper ledgers with robust SQL transactional guarantees, multi-row checkout padding, automated cost auditing, dynamic data visualizations, and an embedded administrative security layer.
 
+## 🖥️ System Preview
+
+![Main Dashboard Preview](./assets/mainDB.png)
+
 ## 🚀 Key Engineering Features
 
 - **🏠 Dynamic Overview KPI Dashboard:** Monitors daily sales transaction volumes, manages responsive real-time layout elements, and uses an interactive low-stock warning metric card for automated storefront updates.
