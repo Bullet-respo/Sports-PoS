@@ -4,7 +4,7 @@ A high-performance, dark-themed, serverless desktop Point of Sale (POS) and inve
 
 ## 🖥️ System Preview
 
-![Main Dashboard Preview](./assets/mainDB.png)
+![Main Dashboard Preview](./mainDB.png)
 
 ## 🚀 Key Engineering Features
 
