@@ -2,6 +2,9 @@ import sqlite3
 import customtkinter as ctk
 from tkinter import ttk, messagebox
 
+import subprocess
+import hashlib
+
 import os
 from reportlab.lib.pagesizes import A5
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
@@ -15,9 +18,31 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")
 
+def get_hardware_id():
+    """Fetches the unique motherboard UUID of the current machine."""
+    try:
+        # Queries Windows Management Instrumentation for the unique machine UUID
+        cmd = "wmic csproduct get UUID"
+        uuid = subprocess.check_output(cmd, shell=True).decode().split('\n')[1].strip()
+        
+        # Hash it with SHA-256 for a clean, short HWID string
+        hwid_hash = hashlib.sha256(uuid.encode()).hexdigest().upper()
+        return f"{hwid_hash[:4]}-{hwid_hash[4:8]}-{hwid_hash[8:12]}"
+    except Exception:
+        # Fallback HWID if WMIC is restricted
+        return "GENERIC-CLIENT-HWID-001"
+        
+def generate_product_key(hwid, secret_salt="SportsShop"):
+    """Generates a valid product key tied specifically to a target HWID."""
+    raw_str = f"{hwid}:{secret_salt}"
+    key_hash = hashlib.sha256(raw_str.encode()).hexdigest().upper()
+    return f"SS-{key_hash[:4]}-{key_hash[4:8]}-{key_hash[8:12]}"
+
 class DurraniSportsApp(ctk.CTk):
     def __init__(self):
         super().__init__()
+        if not self.check_license_activation():
+            self.after(100, self.prompt_activation_window)
 
         self.title("Durrani Sports Nowshera - Enterprise POS")
         self.geometry("1280x720")
@@ -36,7 +61,7 @@ class DurraniSportsApp(ctk.CTk):
         self.container_frame = ctk.CTkFrame(self, corner_radius=0, fg_color="#101116")
         self.container_frame.pack(side="right", fill="both", expand=True)
         # self.admin_security_pin = "1234"
-        dev_password = "Bullet"  # <-- Hardcoded developer console password for restricted access
+        dev_password = "Admin"  # <-- Hardcoded developer console password for restricted access
 
         # Dictionary to hold independent structural page view objects
         self.pages = {}
@@ -129,7 +154,7 @@ class DurraniSportsApp(ctk.CTk):
 
         elif page_id == "developer":
             dev_pass = ctk.CTkInputDialog(text="Enter Developer Security Password:", title="Restricted Console").get_input()
-            if dev_pass != "Bullet":
+            if dev_pass != "Admin":
                 messagebox.showerror("Access Denied", "Incorrect Developer Password!")
                 return
 
@@ -777,7 +802,7 @@ class DurraniSportsApp(ctk.CTk):
         self.ent_cust_phone.pack(side="left")
 
         # FIX 3: Fixed vertical boundary allocation size limit to 8 rows
-        self.bill_table = ttk.Treeview(self.bill_right_frame, columns=("name", "price", "qty", "total"), show="headings", height=15)
+        self.bill_table = ttk.Treeview(self.bill_right_frame, columns=("name", "price", "qty", "total"), show="headings", height=10)
         self.bill_table.heading("name", text="Item Description")
         self.bill_table.heading("price", text="Unit Price")
         self.bill_table.heading("qty", text="Qty")
@@ -1619,6 +1644,99 @@ class DurraniSportsApp(ctk.CTk):
             self.lbl_dev_status.configure(text=f"❌ SQL Execution Error:\n{query_crash_error}", text_color="#e74c3c")
         finally:
             conn.close()
+
+    # ==========================================
+    # HARDWARE-LOCK ACTIVATION METHODS
+    # ==========================================
+    def check_license_activation(self):
+        """Checks if a valid activation key is saved in system_config for this machine."""
+        conn = sqlite3.connect("durrani_sports.db")
+        cursor = conn.cursor()
+        
+        try:
+            cursor.execute("SELECT config_value FROM system_config WHERE config_key = 'activation_key'")
+            row = cursor.fetchone()
+        except Exception:
+            row = None
+        finally:
+            conn.close()
+
+        current_hwid = get_hardware_id()
+        expected_key = generate_product_key(current_hwid)
+
+        if row and row[0] == expected_key:
+            return True
+        return False
+
+    def prompt_activation_window(self):
+        """Spawns an activation lock window preventing workspace access until licensed."""
+        self.withdraw()  # Temporarily hides the main dashboard window
+
+        act_win = ctk.CTkToplevel(self)
+        act_win.title("Product Activation Required - Durrani Sports POS")
+        act_win.geometry("520x360")
+        act_win.resizable(False, False)
+        act_win.grab_set()
+
+        ctk.CTkLabel(act_win, text="🔒 Software Unregistered", font=("Arial", 18, "bold"), text_color="#e74c3c").pack(pady=(20, 5))
+        ctk.CTkLabel(act_win, text="This software instance requires a valid License Key.\nSend the following HWID to the administrator for activation.", font=("Arial", 11)).pack(pady=(0, 15))
+
+        hwid = get_hardware_id()
+
+        # Display Machine HWID Box with Copy Button
+        hw_frame = ctk.CTkFrame(act_win, fg_color="#1a1c23")
+        hw_frame.pack(fill="x", padx=30, pady=10)
+        
+        ctk.CTkLabel(hw_frame, text="Your Machine Hardware ID (HWID):", font=("Arial", 14)).pack(anchor="w", padx=15, pady=(8, 0))
+        
+        # Sub-frame placing the entry field and copy button side-by-side
+        hwid_input_frame = ctk.CTkFrame(hw_frame, fg_color="transparent")
+        hwid_input_frame.pack(fill="x", padx=15, pady=(2, 8))
+
+        ent_hwid = ctk.CTkEntry(hwid_input_frame, font=("Courier New", 12, "bold"), text_color="#f1c40f", height=30)
+        ent_hwid.insert(0, hwid)
+        ent_hwid.configure(state="readonly")
+        ent_hwid.pack(side="left", fill="x", expand=True, padx=(0, 5))
+
+        def copy_hwid_to_clipboard():
+            act_win.clipboard_clear()
+            act_win.clipboard_append(hwid)
+            act_win.update()
+            btn_copy.configure(text="✓ Copied!", fg_color="#27ae60")
+            act_win.after(2000, lambda: btn_copy.configure(text="📋 Copy", fg_color="#2b2d3a"))
+
+        btn_copy = ctk.CTkButton(hwid_input_frame, text="📋 Copy", width=75, height=30, 
+                                 font=("Arial", 11, "bold"), fg_color="#2b2d3a", hover_color="#3e4154", 
+                                 command=copy_hwid_to_clipboard)
+        btn_copy.pack(side="right")
+
+        # License Input Entry
+        ctk.CTkLabel(act_win, text="Enter Provided Product Key:", font=("Arial", 11, "bold")).pack(anchor="w", padx=30, pady=(10, 2))
+        ent_key = ctk.CTkEntry(act_win, placeholder_text="e.g. SS-XXXX-XXXX-XXXX", font=("Courier New", 12), height=35)
+        ent_key.pack(fill="x", padx=30, pady=2)
+
+        def verify_and_activate():
+            input_key = ent_key.get().strip()
+            expected_key = generate_product_key(hwid)
+
+            if input_key == expected_key:
+                conn = sqlite3.connect("durrani_sports.db")
+                cursor = conn.cursor()
+                cursor.execute("INSERT OR REPLACE INTO system_config (config_key, config_value) VALUES ('activation_key', ?)", (input_key,))
+                conn.commit()
+                conn.close()
+
+                messagebox.showinfo("Activation Successful", "Software activated successfully for this machine!")
+                act_win.destroy()
+                self.deiconify()  # Reveals the main app workspace
+            else:
+                messagebox.showerror("Activation Failed", "Invalid Product Key for this specific Machine Hardware ID!")
+
+        btn_activate = ctk.CTkButton(act_win, text="⚡ ACTIVATE SOFTWARE", fg_color="#27ae60", hover_color="#218c53", height=38, font=("Arial", 12, "bold"), command=verify_and_activate)
+        btn_activate.pack(fill="x", padx=30, pady=20)
+
+        # Force app termination if user closes the popup without entering a valid key
+        act_win.protocol("WM_DELETE_WINDOW", self.quit)
 
     def safely_terminate_application(self):
         """Clears all running background thread handlers before closing down Python cleanly."""

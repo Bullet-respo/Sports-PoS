@@ -1,2 +1,7 @@
-
-pip install pandas openpyxl customtkinter packaging reportlab 
+pandas 
+openpyxl 
+customtkinter
+packaging
+reportlab
+matplotlib
+numpy
